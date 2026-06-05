@@ -9,6 +9,7 @@ export class UIController {
       hudGold: document.getElementById("hud-gold"),
       hudShards: document.getElementById("hud-shards"),
       hudWeapon: document.getElementById("hud-weapon"),
+      hudNextRoomButton: document.getElementById("hud-next-room-button"),
       menu: document.getElementById("menu-overlay"),
       hub: document.getElementById("hub-overlay"),
       pause: document.getElementById("pause-overlay"),
@@ -27,6 +28,7 @@ export class UIController {
       toggleAudioButton: document.getElementById("toggle-audio-button"),
       rerollShopButton: document.getElementById("reroll-shop-button"),
       status: document.getElementById("hub-status"),
+      hubCurrency: document.getElementById("hub-currency"),
       shopOffers: document.getElementById("shop-offers"),
       skillsTree: document.getElementById("skills-tree"),
       statsList: document.getElementById("stats-list"),
@@ -50,6 +52,7 @@ export class UIController {
     this.elements.retryButton.addEventListener("click", actions.onNewRun);
     this.elements.continueRunButton.addEventListener("click", actions.onContinueRun);
     this.elements.openHubButton.addEventListener("click", () => actions.onOpenHub("shop"));
+    this.elements.hudNextRoomButton.addEventListener("click", actions.onContinueRoom);
     this.elements.openPauseButton.addEventListener("click", actions.onOpenPause);
     this.elements.closeHubButton.addEventListener("click", actions.onCloseHub);
     this.elements.continueRoomButton.addEventListener("click", actions.onContinueRoom);
@@ -116,11 +119,16 @@ export class UIController {
     this.elements.continueRunButton.textContent = view.canContinueRun ? "Continue Run" : "No Saved Run";
     this.elements.continueRoomButton.disabled = !view.betweenRooms;
     this.elements.continueRoomButton.style.display = view.betweenRooms ? "inline-flex" : "none";
-    this.elements.closeHubButton.disabled = view.betweenRooms;
+    this.elements.hudNextRoomButton.style.display = view.betweenRooms ? "inline-flex" : "none";
     this.elements.status.textContent = view.statusMessage;
     this.elements.skillsSummary.textContent = `${view.skillShards} Skill Shards available`;
     this.elements.toggleAudioButton.textContent = view.muted ? "Unmute Audio" : "Mute Audio";
     this.elements.gameOverSummary.textContent = view.gameOverSummary;
+    this.elements.hubCurrency.innerHTML = `
+      <div class="summary-chip">Gold: ${view.gold}</div>
+      <div class="summary-chip">Shards: ${view.skillShards}</div>
+      <div class="summary-chip">Next Room: ${view.roomLabel}</div>
+    `;
 
     if (this.lastOverlay !== view.overlay) {
       this.setOverlay(view.overlay);

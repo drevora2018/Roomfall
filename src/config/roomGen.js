@@ -1,16 +1,16 @@
 export const ROOM_GEN_CONFIG = {
   tileSize: 48,
   footprintWeights: {
-    rectangle: 4,
-    wide: 3,
-    tall: 3,
-    lShape: 2,
+    rectangle: 1,
+    wide: 4,
+    tall: 4,
+    lShape: 5,
   },
   sizeRanges: {
-    rectangle: { width: [14, 18], height: [10, 14] },
-    wide: { width: [18, 22], height: [10, 12] },
-    tall: { width: [12, 15], height: [14, 18] },
-    lShape: { width: [16, 20], height: [12, 16] },
+    rectangle: { width: [14, 20], height: [9, 13] },
+    wide: { width: [20, 26], height: [8, 11] },
+    tall: { width: [8, 11], height: [18, 24] },
+    lShape: { width: [18, 24], height: [13, 18] },
     boss: { width: 22, height: 16 },
   },
   obstacleDensity: {

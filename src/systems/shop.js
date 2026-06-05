@@ -22,6 +22,7 @@ export function createShopState({
   rerolls,
   currentWeaponId,
   ownedPerks = [],
+  budget = Number.POSITIVE_INFINITY,
 }) {
   const rng = createRng(deriveSeed(seed, "shop", roomIndex, rerolls, currentWeaponId));
   const weaponPool = SHOP_WEAPON_IDS.filter((id) => id !== currentWeaponId);
@@ -37,40 +38,57 @@ export function createShopState({
     { slot: "perk", type: "perk", itemId: perkId },
     { slot: "buff-a", type: "buff", itemId: buffA },
     { slot: "buff-b", type: "buff", itemId: buffB ?? buffA },
-  ];
-
-  return {
-    rerolls,
-    offers: offers.map((offer) => {
-      if (offer.type === "weapon") {
-        const item = WEAPONS[offer.itemId];
-        return {
-          ...offer,
-          name: item.name,
-          description: item.description,
-          cost: item.cost,
-          rarity: item.rarity,
-        };
-      }
-      if (offer.type === "perk") {
-        const item = PERKS[offer.itemId];
-        return {
-          ...offer,
-          name: item.name,
-          description: item.description,
-          cost: item.cost,
-          rarity: "perk",
-        };
-      }
-      const item = BUFFS[offer.itemId];
+  ].map((offer) => {
+    if (offer.type === "weapon") {
+      const item = WEAPONS[offer.itemId];
       return {
         ...offer,
         name: item.name,
         description: item.description,
         cost: item.cost,
-        rarity: "buff",
+        rarity: item.rarity,
       };
-    }),
+    }
+    if (offer.type === "perk") {
+      const item = PERKS[offer.itemId];
+      return {
+        ...offer,
+        name: item.name,
+        description: item.description,
+        cost: item.cost,
+        rarity: "perk",
+      };
+    }
+    const item = BUFFS[offer.itemId];
+    return {
+      ...offer,
+      name: item.name,
+      description: item.description,
+      cost: item.cost,
+      rarity: "buff",
+    };
+  });
+
+  const affordableSupportOffer = offers.find(
+    (offer) => offer.type !== "weapon" && offer.cost <= budget,
+  );
+  if (!affordableSupportOffer && Number.isFinite(budget)) {
+    const cheapestBuffId = Object.entries(BUFFS).sort((left, right) => left[1].cost - right[1].cost)[0][0];
+    const cheapestBuff = BUFFS[cheapestBuffId];
+    offers[2] = {
+      slot: "buff-a",
+      type: "buff",
+      itemId: cheapestBuffId,
+      name: cheapestBuff.name,
+      description: cheapestBuff.description,
+      cost: cheapestBuff.cost,
+      rarity: "buff",
+    };
+  }
+
+  return {
+    rerolls,
+    offers,
   };
 }
 

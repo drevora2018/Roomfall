@@ -98,6 +98,10 @@ button {
   transition: transform 120ms ease, border-color 120ms ease;
 }
 
+#hud-next-room-button {
+  display: none;
+}
+
 .hud-button:hover,
 .action-button:hover,
 .tab-button:hover {
@@ -372,6 +376,11 @@ h3 {
 
 .summary-chip {
   color: var(--gold);
+}
+
+#hub-currency {
+  flex-wrap: wrap;
+  justify-content: center;
 }
 
 .tone-good {

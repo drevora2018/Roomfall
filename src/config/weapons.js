@@ -24,7 +24,7 @@ export const WEAPONS = {
     pellets: 5,
     projectileRadius: 0.12,
     color: "#ffd166",
-    cost: 85,
+    cost: 72,
     rarity: "shop",
   },
   smg: {
@@ -38,7 +38,7 @@ export const WEAPONS = {
     pellets: 1,
     projectileRadius: 0.11,
     color: "#78f0b4",
-    cost: 92,
+    cost: 76,
     rarity: "shop",
   },
 };

@@ -10,6 +10,7 @@ test("shop rolls stable category mix and reroll costs scale", () => {
     rerolls: 0,
     currentWeaponId: "pistol",
     ownedPerks: [],
+    budget: 30,
   });
 
   assert.equal(shop.offers.length, 4);
@@ -17,6 +18,7 @@ test("shop rolls stable category mix and reroll costs scale", () => {
     shop.offers.map((offer) => offer.type),
     ["weapon", "perk", "buff", "buff"],
   );
+  assert.ok(shop.offers.some((offer) => offer.type !== "weapon" && offer.cost <= 30));
   assert.equal(getRerollCost(0), 18);
   assert.equal(getRerollCost(3), 51);
 });

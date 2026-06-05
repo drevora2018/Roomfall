@@ -28,6 +28,15 @@ function angleFromTo(from, to) {
   return Math.atan2(to.y - from.y, to.x - from.x);
 }
 
+function rotateVector(vector, radians) {
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+  return {
+    x: vector.x * cos - vector.y * sin,
+    y: vector.x * sin + vector.y * cos,
+  };
+}
+
 function getBuffTotals(buffIds) {
   return buffIds.reduce(
     (totals, id) => {
@@ -86,7 +95,6 @@ export class Game {
     this.lastTime = 0;
     this.pauseOrigin = "playing";
     this.betweenRooms = false;
-    this.roomQueued = false;
     this.gameOverSummary = "";
     this.renderInfo = {
       scale: 1,
@@ -137,6 +145,10 @@ export class Game {
         } else {
           this.openHub("shop");
         }
+      }
+      if (event.code === "KeyE" && this.betweenRooms && this.overlay === null) {
+        event.preventDefault();
+        this.continueToNextRoom();
       }
       if (event.code === "Escape") {
         event.preventDefault();
@@ -193,6 +205,7 @@ export class Game {
         rerolls: 0,
         currentWeaponId: "pistol",
         ownedPerks: [],
+        budget: GAME_CONSTANTS.startGold,
       }),
       bossProgress: 0,
     };
@@ -219,6 +232,7 @@ export class Game {
     this.notificationUntil = performance.now() / 1000 + 2;
     this.enterRoom(1, false, null, this.run.shopState);
     clearRunSave(this.storage);
+    this.runSave = loadRunSave(this.storage);
     this.overlay = null;
   }
 
@@ -257,6 +271,7 @@ export class Game {
     this.enemies = [];
     this.betweenRooms = false;
     this.enterRoom(this.run.roomIndex, true, saved.playerSnapshot, saved.shopState);
+    this.runSave = saved;
     this.notification = `Continued at room ${this.run.roomIndex}.`;
     this.notificationUntil = performance.now() / 1000 + 2;
     this.overlay = null;
@@ -275,9 +290,6 @@ export class Game {
   }
 
   closeHub() {
-    if (this.betweenRooms) {
-      return;
-    }
     if (this.overlay === "hub") {
       this.overlay = null;
     }
@@ -385,6 +397,7 @@ export class Game {
       rerolls,
       currentWeaponId: this.run.currentWeaponId,
       ownedPerks: this.run.ownedPerks,
+      budget: this.run.gold,
     });
     if (this.betweenRooms) {
       this.persistRunBoundary();
@@ -404,6 +417,9 @@ export class Game {
     this.metaSave = result.metaSave;
     saveMetaSave(this.storage, this.metaSave);
     this.refreshPlayerStats(true);
+    if (this.run) {
+      this.spawnCompanion();
+    }
     if (this.betweenRooms) {
       this.persistRunBoundary();
     }
@@ -441,6 +457,7 @@ export class Game {
         rerolls: 0,
         currentWeaponId: this.run.currentWeaponId,
         ownedPerks: this.run.ownedPerks,
+        budget: this.run.gold,
       });
   }
 
@@ -469,7 +486,13 @@ export class Game {
     const scalars = getEnemyScalars(this.run.roomIndex);
     const rng = createRng(deriveSeed(this.run.seed, "enemies", this.run.roomIndex));
     if (this.room.isBoss) {
-      this.enemies = [this.createEnemy("boss", this.room.enemySpawns[0] ?? { x: this.room.width - 3, y: this.room.height / 2 }, false, scalars)];
+      const bossCell = this.room.enemySpawns[0] ?? { x: this.room.width - 4, y: Math.floor(this.room.height / 2) };
+      this.enemies = [this.createEnemy("boss", bossCell, false, scalars)];
+      return;
+    }
+
+    if (!this.room.enemySpawns.length) {
+      this.enemies = [this.createEnemy("chaser", { x: this.room.width - 3, y: this.room.height - 3 }, false, scalars)];
       return;
     }
 
@@ -489,6 +512,7 @@ export class Game {
     const position = withCenter(cell);
     const eliteFactor = elite ? 1.55 : 1;
     const milestonePatterns = Math.max(0, Math.floor(this.run.roomIndex / 5) - 1);
+    const rng = createRng(deriveSeed(this.run.seed, type, position.x, position.y));
     return {
       ...template,
       x: position.x,
@@ -497,13 +521,15 @@ export class Game {
       maxHp: template.maxHp * scalars.hp * eliteFactor,
       damageValue: template.damage * scalars.damage * eliteFactor,
       moveVelocity: template.moveSpeed * scalars.speed * (elite ? 1.08 : 1),
-      cooldown: createRng(deriveSeed(this.run.seed, type, position.x, position.y)).float(0.2, 0.9),
+      cooldown: rng.float(0.2, 0.9),
       touchCooldown: 0,
       elite,
       windupRemaining: 0,
       dashRemaining: 0,
       dashVector: { x: 0, y: 0 },
       patternLevel: type === "boss" ? milestonePatterns : 0,
+      navBias: rng.next() > 0.5 ? 1 : -1,
+      stuckTime: 0,
     };
   }
 
@@ -533,7 +559,7 @@ export class Game {
     if (this.notification && now > this.notificationUntil) {
       this.notification = "";
     }
-    if (!this.run || this.overlay !== null || this.betweenRooms) {
+    if (!this.run || this.overlay !== null) {
       return;
     }
 
@@ -542,6 +568,10 @@ export class Game {
     this.movePlayer(delta);
     this.updateCompanion(delta);
     this.player.angle = this.getAimAngle();
+
+    if (this.betweenRooms) {
+      return;
+    }
 
     if (this.input.firing) {
       this.fireWeapon();
@@ -696,16 +726,16 @@ export class Game {
 
   updateChaser(enemy, delta) {
     const direction = normalize(this.player.x - enemy.x, this.player.y - enemy.y);
-    this.tryMoveEntity(enemy, enemy.x + direction.x * enemy.moveVelocity * delta, enemy.y + direction.y * enemy.moveVelocity * delta);
+    this.moveEnemyWithSteering(enemy, direction, enemy.moveVelocity, delta);
   }
 
   updateSpitter(enemy, delta) {
     const dist = distance(enemy, this.player);
     const direction = normalize(this.player.x - enemy.x, this.player.y - enemy.y);
     if (dist > 6.5) {
-      this.tryMoveEntity(enemy, enemy.x + direction.x * enemy.moveVelocity * delta, enemy.y + direction.y * enemy.moveVelocity * delta);
+      this.moveEnemyWithSteering(enemy, direction, enemy.moveVelocity, delta);
     } else if (dist < 4.5) {
-      this.tryMoveEntity(enemy, enemy.x - direction.x * enemy.moveVelocity * delta, enemy.y - direction.y * enemy.moveVelocity * delta);
+      this.moveEnemyWithSteering(enemy, { x: -direction.x, y: -direction.y }, enemy.moveVelocity, delta);
     }
     if (enemy.cooldown <= 0) {
       this.enemyProjectiles.push({
@@ -746,16 +776,20 @@ export class Game {
       enemy.cooldown = 2.8;
       return;
     }
-    this.tryMoveEntity(enemy, enemy.x + direction.x * enemy.moveVelocity * delta, enemy.y + direction.y * enemy.moveVelocity * delta);
+    this.moveEnemyWithSteering(enemy, direction, enemy.moveVelocity, delta);
   }
 
   updateBoss(enemy, delta) {
     const direction = normalize(this.player.x - enemy.x, this.player.y - enemy.y);
     const strafe = { x: -direction.y, y: direction.x };
-    this.tryMoveEntity(
+    this.moveEnemyWithSteering(
       enemy,
-      enemy.x + (direction.x * 0.45 + strafe.x * Math.sin(performance.now() / 900)) * enemy.moveVelocity * delta,
-      enemy.y + (direction.y * 0.45 + strafe.y * Math.sin(performance.now() / 900)) * enemy.moveVelocity * delta,
+      {
+        x: direction.x * 0.45 + strafe.x * Math.sin(performance.now() / 900),
+        y: direction.y * 0.45 + strafe.y * Math.sin(performance.now() / 900),
+      },
+      enemy.moveVelocity,
+      delta,
     );
 
     if (enemy.cooldown <= 0) {
@@ -800,7 +834,69 @@ export class Game {
     }
   }
 
+  moveEnemyWithSteering(enemy, desiredDirection, speed, delta) {
+    if (!this.room) {
+      return;
+    }
+    const normalized = normalize(desiredDirection.x, desiredDirection.y);
+    const lateralOffsets =
+      enemy.navBias >= 0
+        ? [0, 0.45, -0.45, 0.9, -0.9, 1.35, -1.35, Math.PI]
+        : [0, -0.45, 0.45, -0.9, 0.9, -1.35, 1.35, Math.PI];
+    let bestMove = null;
+
+    for (const offset of lateralOffsets) {
+      const direction = rotateVector(normalized, offset);
+      const nextX = enemy.x + direction.x * speed * delta;
+      const nextY = enemy.y + direction.y * speed * delta;
+      if (!this.isWalkable(nextX, nextY, enemy.radius)) {
+        continue;
+      }
+
+      const alignment = direction.x * normalized.x + direction.y * normalized.y;
+      const openness = this.measurePathOpenness(nextX, nextY, direction, enemy.radius);
+      const score = alignment * 2 + openness - Math.abs(offset) * 0.28;
+      if (!bestMove || score > bestMove.score) {
+        bestMove = { nextX, nextY, score };
+      }
+    }
+
+    if (bestMove) {
+      const movedDistance = Math.hypot(bestMove.nextX - enemy.x, bestMove.nextY - enemy.y);
+      enemy.x = bestMove.nextX;
+      enemy.y = bestMove.nextY;
+      enemy.stuckTime = movedDistance < 0.02 ? enemy.stuckTime + delta : 0;
+      if (enemy.stuckTime > 0.32) {
+        enemy.navBias *= -1;
+        enemy.stuckTime = 0;
+      }
+      return;
+    }
+
+    enemy.stuckTime += delta;
+    if (enemy.stuckTime > 0.28) {
+      enemy.navBias *= -1;
+      enemy.stuckTime = 0;
+    }
+  }
+
+  measurePathOpenness(x, y, direction, radius) {
+    let openness = 0;
+    for (let step = 1; step <= 3; step += 1) {
+      const sampleX = x + direction.x * step * 0.55;
+      const sampleY = y + direction.y * step * 0.55;
+      if (!this.isWalkable(sampleX, sampleY, radius)) {
+        break;
+      }
+      openness += 0.35;
+    }
+    return openness;
+  }
+
   isWalkable(x, y, radius) {
+    if (!this.room) {
+      return false;
+    }
     const samples = [
       [0, 0],
       [radius, 0],
@@ -853,6 +949,7 @@ export class Game {
     this.projectiles = [];
     this.enemyProjectiles = [];
     this.companion = null;
+    this.runSave = loadRunSave(this.storage);
   }
 
   killEnemy(enemy) {
@@ -884,6 +981,8 @@ export class Game {
     if (this.room.isBoss) {
       this.run.bossProgress += 1;
     }
+    this.projectiles = [];
+    this.enemyProjectiles = [];
     saveMetaSave(this.storage, this.metaSave);
     this.run.roomIndex += 1;
     this.run.shopState = createShopState({
@@ -892,12 +991,13 @@ export class Game {
       rerolls: 0,
       currentWeaponId: this.run.currentWeaponId,
       ownedPerks: this.run.ownedPerks,
+      budget: this.run.gold,
     });
     this.betweenRooms = true;
     this.persistRunBoundary();
     this.hubTab = "shop";
-    this.overlay = "hub";
-    this.notification = `Room ${clearedRoom} cleared. +${roomGold} Gold, +${shardReward} Shards.`;
+    this.overlay = null;
+    this.notification = `Room ${clearedRoom} cleared. +${roomGold} Gold, +${shardReward} Shards. Open Hub or go next.`;
     this.notificationUntil = performance.now() / 1000 + 2.4;
     this.audio.beep({ frequency: this.room.isBoss ? 880 : 760, duration: 0.12, gain: 0.04, type: "triangle" });
   }
@@ -906,7 +1006,7 @@ export class Game {
     if (!this.run) {
       return;
     }
-    saveRunSave(this.storage, {
+    this.runSave = {
       seed: this.run.seed,
       roomIndex: this.run.roomIndex,
       gold: this.run.gold,
@@ -919,7 +1019,8 @@ export class Game {
       ownedBuffs: this.run.ownedBuffs,
       shopState: this.run.shopState,
       bossProgress: this.run.bossProgress,
-    });
+    };
+    saveRunSave(this.storage, this.runSave);
   }
 
   getDamageMultiplierAgainst(target) {
@@ -1134,9 +1235,9 @@ export class Game {
       gold: this.run?.gold ?? 0,
       skillShards: this.metaSave.skillShards,
       weaponName: currentWeapon.name,
-      canContinueRun: Boolean(this.runSave.seed || loadRunSave(this.storage).seed),
+      canContinueRun: Boolean(this.runSave?.seed),
       statusMessage: this.betweenRooms
-        ? `Boundary save ready. Spend Gold or Skill Shards, then enter room ${this.run?.roomIndex ?? 1}.`
+        ? `Room clear. Move freely, open Hub when ready, or enter room ${this.run?.roomIndex ?? 1}.`
         : this.notification,
       rerollCost: this.run?.shopState ? getRerollCost(this.run.shopState.rerolls) : getRerollCost(0),
       canReroll: Boolean(this.run?.shopState && this.run.gold >= getRerollCost(this.run.shopState.rerolls)),

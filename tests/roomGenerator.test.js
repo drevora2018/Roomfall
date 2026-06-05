@@ -18,3 +18,17 @@ test("generated rooms stay connected across several seeds and milestones", () =>
     assert.equal(room.mask[room.spawn.y][room.spawn.x], 1);
   }
 });
+
+test("generation now leans away from square arenas and keeps boss spawns valid", () => {
+  const rooms = Array.from({ length: 12 }, (_, index) =>
+    generateRoom({ seed: 500 + index, roomIndex: index + 2, isBoss: false }),
+  );
+  const nonSquareRooms = rooms.filter(
+    (room) => room.type !== "rectangle" || Math.abs(room.width - room.height) >= 4,
+  );
+  const bossRoom = generateRoom({ seed: 999, roomIndex: 10, isBoss: true });
+
+  assert.ok(nonSquareRooms.length >= 8);
+  assert.equal(bossRoom.enemySpawns.length, 1);
+  assert.equal(validateRoomConnectivity(bossRoom), true);
+});
