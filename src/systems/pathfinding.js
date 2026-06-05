@@ -2,6 +2,17 @@ function getPF() {
   return globalThis.PF ?? null;
 }
 
+function isValidTile(context, point) {
+  return (
+    Number.isInteger(point?.x) &&
+    Number.isInteger(point?.y) &&
+    point.x >= 0 &&
+    point.y >= 0 &&
+    point.y < context.matrix.length &&
+    point.x < context.matrix[0].length
+  );
+}
+
 export function createNavigationContext(room) {
   const PF = getPF();
   if (!PF || !room) {
@@ -16,9 +27,9 @@ export function createNavigationContext(room) {
 
   return {
     matrix,
-    finder: new PF.JumpPointFinder({
-      diagonalMovement: PF.DiagonalMovement.IfAtMostOneObstacle,
-    }),
+    // The browser bundle exposed on GitHub Pages does not export DiagonalMovement,
+    // but its JumpPointFinder defaults to "IfAtMostOneObstacle" when no option is given.
+    finder: new PF.JumpPointFinder({}),
   };
 }
 
@@ -28,6 +39,14 @@ export function findNavigationPath(context, start, goal) {
     return [];
   }
 
-  const grid = new PF.Grid(context.matrix);
-  return context.finder.findPath(start.x, start.y, goal.x, goal.y, grid);
+  if (!isValidTile(context, start) || !isValidTile(context, goal)) {
+    return [];
+  }
+
+  try {
+    const grid = new PF.Grid(context.matrix);
+    return context.finder.findPath(start.x, start.y, goal.x, goal.y, grid);
+  } catch {
+    return [];
+  }
 }
