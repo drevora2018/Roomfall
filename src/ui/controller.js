@@ -44,6 +44,9 @@ export class UIController {
     };
     this.lastOverlay = null;
     this.lastTab = "shop";
+    this.lastShopSignature = "";
+    this.lastSkillsSignature = "";
+    this.lastStatsSignature = "";
   }
 
   bind(actions) {
@@ -143,6 +146,11 @@ export class UIController {
   }
 
   renderShop(offers, gold, rerollCost, canReroll) {
+    const signature = JSON.stringify({ offers, gold, rerollCost, canReroll });
+    if (signature === this.lastShopSignature) {
+      return;
+    }
+    this.lastShopSignature = signature;
     this.elements.rerollShopButton.textContent = `Reroll (${rerollCost} Gold)`;
     this.elements.rerollShopButton.disabled = !canReroll;
     this.elements.shopOffers.innerHTML = offers
@@ -172,6 +180,11 @@ export class UIController {
   }
 
   renderSkills(skills, skillShards) {
+    const signature = JSON.stringify({ skills, skillShards });
+    if (signature === this.lastSkillsSignature) {
+      return;
+    }
+    this.lastSkillsSignature = signature;
     const grouped = SKILL_TREE.reduce((result, skill) => {
       if (!result[skill.branch]) {
         result[skill.branch] = [];
@@ -220,6 +233,11 @@ export class UIController {
   }
 
   renderStats(stats, mathLines) {
+    const signature = JSON.stringify({ stats, mathLines });
+    if (signature === this.lastStatsSignature) {
+      return;
+    }
+    this.lastStatsSignature = signature;
     this.elements.statsList.innerHTML = `
       <ul>
         ${stats.map((line) => `<li>${line}</li>`).join("")}

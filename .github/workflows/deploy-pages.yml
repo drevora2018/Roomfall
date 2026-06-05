@@ -27,6 +27,9 @@ jobs:
         with:
           node-version: 22
 
+      - name: Install dependencies
+        run: npm ci
+
       - name: Run logic tests
         run: npm test
 

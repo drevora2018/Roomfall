@@ -4,6 +4,7 @@ import { BUFFS, PERKS } from "./config/perks.js";
 import { SKILL_TREE } from "./config/skills.js";
 import { WEAPONS } from "./config/weapons.js";
 import { AudioManager } from "./systems/audio.js";
+import { createNavigationContext, findNavigationPath } from "./systems/pathfinding.js";
 import { generateRoom } from "./systems/roomGenerator.js";
 import { createRng, deriveSeed } from "./systems/rng.js";
 import { getCompanionScalar, getEnemyScalars, getPlayerRoomScalars, describeScalingMath } from "./systems/scaling.js";
@@ -79,6 +80,7 @@ export class Game {
     this.enemies = [];
     this.projectiles = [];
     this.enemyProjectiles = [];
+    this.navigation = null;
     this.notification = "";
     this.notificationUntil = 0;
     this.input = {
@@ -434,6 +436,7 @@ export class Game {
       roomIndex,
       isBoss: roomIndex % 5 === 0,
     });
+    this.navigation = createNavigationContext(this.room);
     const spawn = withCenter(this.room.spawn);
     this.player.x = spawn.x;
     this.player.y = spawn.y;
@@ -530,6 +533,10 @@ export class Game {
       patternLevel: type === "boss" ? milestonePatterns : 0,
       navBias: rng.next() > 0.5 ? 1 : -1,
       stuckTime: 0,
+      path: [],
+      pathIndex: 0,
+      pathTimer: rng.float(0.08, 0.22),
+      lastTargetKey: "",
     };
   }
 
@@ -725,17 +732,19 @@ export class Game {
   }
 
   updateChaser(enemy, delta) {
-    const direction = normalize(this.player.x - enemy.x, this.player.y - enemy.y);
+    const direction = this.getNavigationDirection(enemy, this.player, delta);
     this.moveEnemyWithSteering(enemy, direction, enemy.moveVelocity, delta);
   }
 
   updateSpitter(enemy, delta) {
     const dist = distance(enemy, this.player);
-    const direction = normalize(this.player.x - enemy.x, this.player.y - enemy.y);
+    const direction = this.getNavigationDirection(enemy, this.player, delta);
     if (dist > 6.5) {
       this.moveEnemyWithSteering(enemy, direction, enemy.moveVelocity, delta);
     } else if (dist < 4.5) {
-      this.moveEnemyWithSteering(enemy, { x: -direction.x, y: -direction.y }, enemy.moveVelocity, delta);
+      const retreatTarget = this.getRetreatTarget(enemy, this.player, 4);
+      const retreatDirection = this.getNavigationDirection(enemy, retreatTarget, delta);
+      this.moveEnemyWithSteering(enemy, retreatDirection, enemy.moveVelocity, delta);
     }
     if (enemy.cooldown <= 0) {
       this.enemyProjectiles.push({
@@ -752,7 +761,7 @@ export class Game {
   }
 
   updateCharger(enemy, delta) {
-    const direction = normalize(this.player.x - enemy.x, this.player.y - enemy.y);
+    const direction = this.getNavigationDirection(enemy, this.player, delta);
     const dist = distance(enemy, this.player);
     if (enemy.dashRemaining > 0) {
       this.tryMoveEntity(
@@ -780,7 +789,7 @@ export class Game {
   }
 
   updateBoss(enemy, delta) {
-    const direction = normalize(this.player.x - enemy.x, this.player.y - enemy.y);
+    const direction = this.getNavigationDirection(enemy, this.player, delta);
     const strafe = { x: -direction.y, y: direction.x };
     this.moveEnemyWithSteering(
       enemy,
@@ -832,6 +841,62 @@ export class Game {
     if (this.isWalkable(entity.x, nextY, entity.radius)) {
       entity.y = nextY;
     }
+  }
+
+  getTilePosition(point) {
+    if (!this.room) {
+      return { x: 0, y: 0 };
+    }
+    return {
+      x: clamp(Math.floor(point.x), 0, this.room.width - 1),
+      y: clamp(Math.floor(point.y), 0, this.room.height - 1),
+    };
+  }
+
+  getRetreatTarget(enemy, target, distanceAway) {
+    const direction = normalize(enemy.x - target.x, enemy.y - target.y);
+    return {
+      x: clamp(enemy.x + direction.x * distanceAway, 0.5, this.room.width - 0.5),
+      y: clamp(enemy.y + direction.y * distanceAway, 0.5, this.room.height - 0.5),
+    };
+  }
+
+  getNavigationDirection(enemy, target, delta, forceRefresh = false) {
+    const fallback = normalize(target.x - enemy.x, target.y - enemy.y);
+    if (!this.navigation) {
+      return fallback;
+    }
+
+    enemy.pathTimer -= delta;
+    const startTile = this.getTilePosition(enemy);
+    const targetTile = this.getTilePosition(target);
+    const targetKey = `${targetTile.x},${targetTile.y}`;
+    const shouldRepath =
+      forceRefresh ||
+      enemy.pathTimer <= 0 ||
+      !enemy.path.length ||
+      enemy.pathIndex >= enemy.path.length ||
+      enemy.lastTargetKey !== targetKey ||
+      enemy.stuckTime > 0.18;
+
+    if (shouldRepath) {
+      const path = findNavigationPath(this.navigation, startTile, targetTile);
+      enemy.path = path.length ? path : [[startTile.x, startTile.y], [targetTile.x, targetTile.y]];
+      enemy.pathIndex = Math.min(1, Math.max(0, enemy.path.length - 1));
+      enemy.pathTimer = enemy.id === "boss" ? 0.24 : enemy.ai === "charger" ? 0.18 : 0.32;
+      enemy.lastTargetKey = targetKey;
+    }
+
+    while (enemy.pathIndex < enemy.path.length) {
+      const [tileX, tileY] = enemy.path[enemy.pathIndex];
+      const waypoint = { x: tileX + 0.5, y: tileY + 0.5 };
+      if (distance(enemy, waypoint) > 0.3) {
+        return normalize(waypoint.x - enemy.x, waypoint.y - enemy.y);
+      }
+      enemy.pathIndex += 1;
+    }
+
+    return fallback;
   }
 
   moveEnemyWithSteering(enemy, desiredDirection, speed, delta) {
@@ -948,6 +1013,7 @@ export class Game {
     this.enemies = [];
     this.projectiles = [];
     this.enemyProjectiles = [];
+    this.navigation = null;
     this.companion = null;
     this.runSave = loadRunSave(this.storage);
   }

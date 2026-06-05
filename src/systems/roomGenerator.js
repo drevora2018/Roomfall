@@ -112,10 +112,11 @@ function pickSpawn(mask, rng) {
   }, null);
 }
 
-function placeObstacles(mask, spawn, rng, isBoss = false) {
-  if (isBoss) {
-    return createGrid(mask[0].length, mask.length, 0);
-  }
+function isInsideReserve(x, y, reservedCells) {
+  return reservedCells.some((entry) => Math.hypot(x - entry.cell.x, y - entry.cell.y) <= entry.radius);
+}
+
+function placeObstacles(mask, spawn, rng, isBoss = false, reservedCells = []) {
   const blocked = createGrid(mask[0].length, mask.length, 0);
   const floorCells = getFloorCells(mask);
   const density = rng.float(ROOM_GEN_CONFIG.obstacleDensity.min, ROOM_GEN_CONFIG.obstacleDensity.max);
@@ -137,6 +138,9 @@ function placeObstacles(mask, spawn, rng, isBoss = false) {
         continue;
       }
       if (Math.hypot(x - spawn.x, y - spawn.y) <= ROOM_GEN_CONFIG.safeSpawnRadius) {
+        continue;
+      }
+      if (isInsideReserve(x, y, reservedCells)) {
         continue;
       }
       positions.push({ x, y });
@@ -196,6 +200,21 @@ function pickBossSpawn(mask, blocked, spawn, rng) {
   }, null);
 }
 
+function pickBossAnchor(mask, spawn, rng) {
+  const candidates = getFloorCells(mask).filter(
+    (cell) => Math.hypot(cell.x - spawn.x, cell.y - spawn.y) >= ROOM_GEN_CONFIG.minimumSpawnDistance + 2,
+  );
+
+  if (!candidates.length) {
+    return { x: mask[0].length - 4, y: Math.floor(mask.length / 2) };
+  }
+
+  return candidates.reduce((best, cell) => {
+    const score = Math.hypot(cell.x - spawn.x, cell.y - spawn.y) + rng.float(0, 1.5);
+    return !best || score > best.score ? { ...cell, score } : best;
+  }, null);
+}
+
 export function validateRoomConnectivity(room) {
   const reachable = floodFillReachable(room.mask, room.blocked, room.spawn);
   const floorCount = getFloorCells(room.mask).filter((cell) => room.blocked[cell.y][cell.x] === 0).length;
@@ -214,9 +233,16 @@ export function generateRoom({ seed, roomIndex, isBoss = false }) {
     mask = createGrid(width, height, 1);
   }
   const spawn = pickSpawn(mask, rng);
-  const blocked = placeObstacles(mask, spawn, rng, isBoss);
+  const bossAnchor = isBoss ? pickBossAnchor(mask, spawn, rng) : null;
+  const blocked = placeObstacles(
+    mask,
+    spawn,
+    rng,
+    isBoss,
+    bossAnchor ? [{ cell: bossAnchor, radius: 1.6 }] : [],
+  );
   const enemySpawns = isBoss
-    ? [pickBossSpawn(mask, blocked, spawn, rng)]
+    ? [pickBossSpawn(mask, blocked, spawn, rng) ?? bossAnchor]
     : pickEnemySpawns(mask, blocked, spawn, rng, 0.46);
 
   return {
