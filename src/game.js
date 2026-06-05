@@ -64,6 +64,34 @@ function hasPerk(perkIds, perkId) {
   return perkIds.includes(perkId);
 }
 
+function summarizeOwnedItems(ids, definitions) {
+  if (!ids.length) {
+    return "None";
+  }
+
+  const counts = ids.reduce((map, id) => {
+    map.set(id, (map.get(id) ?? 0) + 1);
+    return map;
+  }, new Map());
+
+  return [...counts.entries()]
+    .map(([id, count]) => `${definitions[id].name}${count > 1 ? ` x${count}` : ""}`)
+    .join(", ");
+}
+
+export function calculateRoomClearHeal(player, perkIds) {
+  const baseHeal = player.maxHp * GAME_CONSTANTS.boundaryHealRatio;
+  const perkHeal = hasPerk(perkIds, "killSwitch") ? 12 : 0;
+  const nextHp = Math.min(player.maxHp, player.hp + baseHeal + perkHeal);
+
+  return {
+    baseHeal,
+    perkHeal,
+    appliedHeal: Math.max(0, nextHp - player.hp),
+    nextHp,
+  };
+}
+
 export class Game {
   constructor({ canvas, ui, storage }) {
     this.canvas = canvas;
@@ -81,8 +109,11 @@ export class Game {
     this.projectiles = [];
     this.enemyProjectiles = [];
     this.navigation = null;
+    this.walkableCells = [];
     this.notification = "";
     this.notificationUntil = 0;
+    this.roomGoldEarned = 0;
+    this.roomRewardSummary = "";
     this.input = {
       up: false,
       down: false,
@@ -230,6 +261,7 @@ export class Game {
     this.enemies = [];
     this.betweenRooms = false;
     this.gameOverSummary = "";
+    this.roomRewardSummary = "";
     this.notification = "Run started.";
     this.notificationUntil = performance.now() / 1000 + 2;
     this.enterRoom(1, false, null, this.run.shopState);
@@ -273,6 +305,7 @@ export class Game {
     this.enemyProjectiles = [];
     this.enemies = [];
     this.betweenRooms = false;
+    this.roomRewardSummary = "";
     this.enterRoom(this.run.roomIndex, true, saved.playerSnapshot, saved.shopState);
     this.runSave = saved;
     this.notification = `Continued at room ${this.run.roomIndex}.`;
@@ -282,6 +315,7 @@ export class Game {
   }
 
   returnToMenu() {
+    this.roomRewardSummary = "";
     this.overlay = "menu";
     this.ui.setOverlay("menu");
   }
@@ -324,6 +358,7 @@ export class Game {
       return;
     }
     this.betweenRooms = false;
+    this.roomRewardSummary = "";
     this.enterRoom(this.run.roomIndex, false, { hp: this.player.hp, maxHp: this.player.maxHp }, this.run.shopState);
     this.overlay = null;
     this.ui.setOverlay(null);
@@ -393,7 +428,7 @@ export class Game {
     if (!this.run?.shopState) {
       return;
     }
-    const cost = getRerollCost(this.run.shopState.rerolls);
+    const cost = getRerollCost(this.run.shopState.rerolls, this.run.roomIndex);
     if (this.run.gold < cost) {
       this.notification = "Not enough Gold to reroll.";
       this.notificationUntil = performance.now() / 1000 + 1.2;
@@ -445,11 +480,13 @@ export class Game {
       isBoss: roomIndex % 5 === 0,
     });
     this.navigation = createNavigationContext(this.room);
+    this.walkableCells = this.collectWalkableCells();
     const spawn = withCenter(this.room.spawn);
     this.player.x = spawn.x;
     this.player.y = spawn.y;
     this.projectiles = [];
     this.enemyProjectiles = [];
+    this.roomGoldEarned = 0;
     this.refreshPlayerStats(true);
     if (playerSnapshot) {
       const ratio = playerSnapshot.maxHp ? playerSnapshot.hp / playerSnapshot.maxHp : 1;
@@ -545,6 +582,9 @@ export class Game {
       pathIndex: 0,
       pathTimer: rng.float(0.08, 0.22),
       lastTargetKey: "",
+      tacticTimer: rng.float(0.12, 0.28),
+      tacticalTarget: null,
+      lastTacticKey: "",
     };
   }
 
@@ -746,15 +786,36 @@ export class Game {
 
   updateSpitter(enemy, delta) {
     const dist = distance(enemy, this.player);
-    const direction = this.getNavigationDirection(enemy, this.player, delta);
-    if (dist > 6.5) {
-      this.moveEnemyWithSteering(enemy, direction, enemy.moveVelocity, delta);
-    } else if (dist < 4.5) {
+    const hasLine = this.hasLineOfSight(enemy, this.player);
+    const tacticalTarget = this.getRangedTacticalTarget(
+      enemy,
+      this.player,
+      {
+        preferredDistance: 6.4,
+        minDistance: 4.9,
+        maxDistance: 8.8,
+        coverBias: 3.1,
+        flankBias: 1.45,
+        retargetCooldown: 0.42,
+      },
+      delta,
+    );
+
+    if (dist < 4.2) {
       const retreatTarget = this.getRetreatTarget(enemy, this.player, 4);
       const retreatDirection = this.getNavigationDirection(enemy, retreatTarget, delta);
       this.moveEnemyWithSteering(enemy, retreatDirection, enemy.moveVelocity, delta);
+    } else if (!hasLine || dist > 7.2 || distance(enemy, tacticalTarget) > 0.8) {
+      const approachDirection = this.getNavigationDirection(enemy, tacticalTarget, delta);
+      this.moveEnemyWithSteering(enemy, approachDirection, enemy.moveVelocity, delta);
+    } else {
+      const orbitTarget = this.getOrbitTargetAroundPlayer(enemy, this.player, 6.2, 0.58);
+      const orbitDirection = this.getNavigationDirection(enemy, orbitTarget, delta);
+      this.moveEnemyWithSteering(enemy, orbitDirection, enemy.moveVelocity * 0.52, delta);
     }
-    if (enemy.cooldown <= 0) {
+
+    if (enemy.cooldown <= 0 && hasLine) {
+      const direction = normalize(this.player.x - enemy.x, this.player.y - enemy.y);
       this.enemyProjectiles.push({
         x: enemy.x,
         y: enemy.y,
@@ -769,7 +830,6 @@ export class Game {
   }
 
   updateCharger(enemy, delta) {
-    const direction = this.getNavigationDirection(enemy, this.player, delta);
     const dist = distance(enemy, this.player);
     if (enemy.dashRemaining > 0) {
       this.tryMoveEntity(
@@ -784,7 +844,7 @@ export class Game {
       enemy.windupRemaining = Math.max(0, enemy.windupRemaining - delta);
       if (enemy.windupRemaining === 0) {
         enemy.dashRemaining = enemy.dashSpeed;
-        enemy.dashVector = direction;
+        enemy.dashVector = normalize(this.player.x - enemy.x, this.player.y - enemy.y);
       }
       return;
     }
@@ -793,23 +853,41 @@ export class Game {
       enemy.cooldown = 2.8;
       return;
     }
+    const flankTarget =
+      dist > 4.8 ? this.getOrbitTargetAroundPlayer(enemy, this.player, Math.max(3.2, Math.min(5.1, dist - 0.6)), 0.7) : this.player;
+    const direction = this.getNavigationDirection(enemy, flankTarget, delta, dist < 5.8);
     this.moveEnemyWithSteering(enemy, direction, enemy.moveVelocity, delta);
   }
 
   updateBoss(enemy, delta) {
-    const direction = this.getNavigationDirection(enemy, this.player, delta);
+    const hasLine = this.hasLineOfSight(enemy, this.player);
+    const tacticalTarget = this.getRangedTacticalTarget(
+      enemy,
+      this.player,
+      {
+        preferredDistance: 7.4,
+        minDistance: 5.8,
+        maxDistance: 10.4,
+        coverBias: 1.8,
+        flankBias: 1.9,
+        retargetCooldown: 0.34,
+      },
+      delta,
+    );
+    const direction = this.getNavigationDirection(enemy, tacticalTarget, delta);
     const strafe = { x: -direction.y, y: direction.x };
+    const approachBlend = !hasLine || distance(enemy, tacticalTarget) > 1 ? 0.78 : 0.36;
     this.moveEnemyWithSteering(
       enemy,
       {
-        x: direction.x * 0.45 + strafe.x * Math.sin(performance.now() / 900),
-        y: direction.y * 0.45 + strafe.y * Math.sin(performance.now() / 900),
+        x: direction.x * approachBlend + strafe.x * Math.sin(performance.now() / 900),
+        y: direction.y * approachBlend + strafe.y * Math.sin(performance.now() / 900),
       },
       enemy.moveVelocity,
       delta,
     );
 
-    if (enemy.cooldown <= 0) {
+    if (enemy.cooldown <= 0 && hasLine) {
       const bulletCount = 5 + enemy.patternLevel * 2;
       for (let index = 0; index < bulletCount; index += 1) {
         const offset = ((index / bulletCount) - 0.5) * 0.9;
@@ -867,6 +945,165 @@ export class Game {
       x: clamp(enemy.x + direction.x * distanceAway, 0.5, this.room.width - 0.5),
       y: clamp(enemy.y + direction.y * distanceAway, 0.5, this.room.height - 0.5),
     };
+  }
+
+  collectWalkableCells() {
+    if (!this.room) {
+      return [];
+    }
+
+    const cells = [];
+    for (let y = 0; y < this.room.height; y += 1) {
+      for (let x = 0; x < this.room.width; x += 1) {
+        if (this.room.mask[y][x] === 1 && this.room.blocked[y][x] === 0) {
+          cells.push({ x: x + 0.5, y: y + 0.5, tileX: x, tileY: y });
+        }
+      }
+    }
+    return cells;
+  }
+
+  hasLineOfSight(from, to) {
+    if (!this.room) {
+      return false;
+    }
+
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    const rayDistance = Math.hypot(dx, dy);
+    const steps = Math.max(1, Math.ceil(rayDistance / 0.2));
+
+    for (let step = 1; step < steps; step += 1) {
+      const ratio = step / steps;
+      const sampleX = from.x + dx * ratio;
+      const sampleY = from.y + dy * ratio;
+      const tileX = Math.floor(sampleX);
+      const tileY = Math.floor(sampleY);
+      if (
+        tileX < 0 ||
+        tileY < 0 ||
+        tileY >= this.room.height ||
+        tileX >= this.room.width ||
+        this.room.mask[tileY][tileX] !== 1 ||
+        this.room.blocked[tileY][tileX] !== 0
+      ) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  isAdjacentToCover(point) {
+    if (!this.room) {
+      return false;
+    }
+
+    const { x, y } = this.getTilePosition(point);
+    const neighbors = [
+      [1, 0],
+      [-1, 0],
+      [0, 1],
+      [0, -1],
+      [1, 1],
+      [1, -1],
+      [-1, 1],
+      [-1, -1],
+    ];
+
+    return neighbors.some(([dx, dy]) => {
+      const tileX = x + dx;
+      const tileY = y + dy;
+      return (
+        tileX < 0 ||
+        tileY < 0 ||
+        tileY >= this.room.height ||
+        tileX >= this.room.width ||
+        this.room.mask[tileY][tileX] !== 1 ||
+        this.room.blocked[tileY][tileX] !== 0
+      );
+    });
+  }
+
+  getOrbitTargetAroundPlayer(enemy, target, desiredDistance, radiansOffset) {
+    const baseAngle = Math.atan2(enemy.y - target.y, enemy.x - target.x);
+    const orbitAngle = baseAngle + radiansOffset * enemy.navBias;
+    return {
+      x: clamp(target.x + Math.cos(orbitAngle) * desiredDistance, 0.5, this.room.width - 0.5),
+      y: clamp(target.y + Math.sin(orbitAngle) * desiredDistance, 0.5, this.room.height - 0.5),
+    };
+  }
+
+  findBestTacticalPosition(enemy, target, profile) {
+    if (!this.room || !this.walkableCells.length) {
+      return target;
+    }
+
+    const fromTarget = normalize(enemy.x - target.x, enemy.y - target.y);
+    const stride = this.walkableCells.length > 220 ? 2 : 1;
+    const offset = enemy.navBias > 0 ? 0 : 1;
+    let best = null;
+    let fallback = null;
+
+    for (let index = offset; index < this.walkableCells.length; index += stride) {
+      const cell = this.walkableCells[index];
+      const distToTarget = distance(cell, target);
+      if (distToTarget < profile.minDistance || distToTarget > profile.maxDistance) {
+        continue;
+      }
+
+      const los = this.hasLineOfSight(cell, target);
+      const cover = this.isAdjacentToCover(cell);
+      const distFromEnemy = distance(cell, enemy);
+      const fromCandidate = normalize(cell.x - target.x, cell.y - target.y);
+      const flankScore = 1 - Math.abs(fromCandidate.x * fromTarget.x + fromCandidate.y * fromTarget.y);
+      const rangePenalty = Math.abs(distToTarget - profile.preferredDistance);
+      const mobilityPenalty = Math.min(10, distFromEnemy) * 0.22;
+      const currentBias = distance(cell, enemy) < 0.8 ? 0.9 : 0;
+      const score =
+        (los ? 5.2 : -2.8) +
+        (cover ? profile.coverBias : 0) +
+        flankScore * profile.flankBias +
+        currentBias -
+        rangePenalty * 1.15 -
+        mobilityPenalty;
+
+      if (!fallback || score > fallback.score) {
+        fallback = { cell, score };
+      }
+      if (los && (!best || score > best.score)) {
+        best = { cell, score };
+      }
+    }
+
+    if (best) {
+      return best.cell;
+    }
+    if (fallback) {
+      return fallback.cell;
+    }
+
+    return this.getOrbitTargetAroundPlayer(enemy, target, profile.preferredDistance, 0.65);
+  }
+
+  getRangedTacticalTarget(enemy, target, profile, delta) {
+    enemy.tacticTimer = Math.max(0, (enemy.tacticTimer ?? 0) - delta);
+    const targetTile = this.getTilePosition(target);
+    const tacticKey = `${targetTile.x},${targetTile.y}`;
+    const reachedTarget = enemy.tacticalTarget && distance(enemy, enemy.tacticalTarget) < 0.75;
+    const shouldRefresh =
+      !enemy.tacticalTarget ||
+      enemy.tacticTimer <= 0 ||
+      enemy.lastTacticKey !== tacticKey ||
+      (reachedTarget && !this.hasLineOfSight(enemy, target));
+
+    if (shouldRefresh) {
+      enemy.tacticalTarget = this.findBestTacticalPosition(enemy, target, profile);
+      enemy.lastTacticKey = tacticKey;
+      enemy.tacticTimer = profile.retargetCooldown;
+    }
+
+    return enemy.tacticalTarget ?? target;
   }
 
   getNavigationDirection(enemy, target, delta, forceRefresh = false) {
@@ -1023,6 +1260,9 @@ export class Game {
     this.projectiles = [];
     this.enemyProjectiles = [];
     this.navigation = null;
+    this.walkableCells = [];
+    this.roomGoldEarned = 0;
+    this.roomRewardSummary = "";
     this.companion = null;
     this.runSave = loadRunSave(this.storage);
   }
@@ -1033,7 +1273,9 @@ export class Game {
       return;
     }
     const goldBonus = enemy.id === "boss" && hasPerk(this.run.ownedPerks, "bossBounty") ? 1.25 : 1;
-    this.run.gold += Math.round(enemy.rewardGold * this.player.goldMultiplier * goldBonus * (enemy.elite ? 1.2 : 1));
+    const goldReward = Math.round(enemy.rewardGold * this.player.goldMultiplier * goldBonus * (enemy.elite ? 1.2 : 1));
+    this.run.gold += goldReward;
+    this.roomGoldEarned += goldReward;
     this.enemies.splice(index, 1);
     this.audio.beep({ frequency: enemy.ai === "boss" ? 220 : 480, duration: enemy.ai === "boss" ? 0.12 : 0.05, gain: 0.03 });
   }
@@ -1045,14 +1287,13 @@ export class Game {
     const clearedRoom = this.run.roomIndex;
     const shardReward = GAME_CONSTANTS.roomClearShardReward + (this.room.isBoss ? GAME_CONSTANTS.bossShardBonus : 0);
     const roomGold = Math.round(GAME_CONSTANTS.roomClearGoldBonus * this.player.goldMultiplier);
+    const bountyGold = this.roomGoldEarned;
+    const totalGold = bountyGold + roomGold;
+    const healSummary = calculateRoomClearHeal(this.player, this.run.ownedPerks);
     this.run.gold += roomGold;
     this.metaSave.skillShards += shardReward;
     this.metaSave.highScore = Math.max(this.metaSave.highScore, clearedRoom);
-    if (hasPerk(this.run.ownedPerks, "killSwitch")) {
-      this.player.hp = Math.min(this.player.maxHp, this.player.hp + 12);
-    } else {
-      this.player.hp = Math.min(this.player.maxHp, this.player.hp + this.player.maxHp * GAME_CONSTANTS.boundaryHealRatio);
-    }
+    this.player.hp = healSummary.nextHp;
     if (this.room.isBoss) {
       this.run.bossProgress += 1;
     }
@@ -1072,7 +1313,12 @@ export class Game {
     this.persistRunBoundary();
     this.hubTab = "shop";
     this.overlay = null;
-    this.notification = `Room ${clearedRoom} cleared. +${roomGold} Gold, +${shardReward} Shards. Open Hub or go next.`;
+    const healText =
+      healSummary.perkHeal > 0
+        ? `${Math.round(healSummary.appliedHeal)} HP healed (${Math.round(healSummary.baseHeal)} base + ${Math.round(healSummary.perkHeal)} Kill Switch).`
+        : `${Math.round(healSummary.appliedHeal)} HP healed.`;
+    this.roomRewardSummary = `Room ${clearedRoom} clear rewards: ${bountyGold} Gold from bounties, ${roomGold} Gold room bonus, ${shardReward} Shards, ${healText}`;
+    this.notification = `Room ${clearedRoom} cleared. +${totalGold} Gold total (${bountyGold} bounties, ${roomGold} bonus), +${shardReward} Shards, ${healText}`;
     this.notificationUntil = performance.now() / 1000 + 2.4;
     this.audio.beep({ frequency: this.room.isBoss ? 880 : 760, duration: 0.12, gain: 0.04, type: "triangle" });
   }
@@ -1287,12 +1533,13 @@ export class Game {
     const stats = this.run
       ? [
           `Room ${this.run.roomIndex}${this.room?.isBoss ? " boss arena" : ""}`,
+          `HP: ${Math.ceil(this.player.hp)} / ${Math.ceil(this.player.maxHp)}`,
           `Damage scalar: x${this.player.damageMultiplier.toFixed(2)}`,
           `Fire rate scalar: x${this.player.fireRateMultiplier.toFixed(2)}`,
           `Move speed: ${this.player.moveSpeed.toFixed(2)}`,
           `Gold gain multiplier: x${this.player.goldMultiplier.toFixed(2)}`,
-          `Perks: ${this.run.ownedPerks.length ? this.run.ownedPerks.map((id) => PERKS[id].name).join(", ") : "None"}`,
-          `Buffs: ${this.run.ownedBuffs.length ? this.run.ownedBuffs.map((id) => BUFFS[id].name).join(", ") : "None"}`,
+          `Perks: ${summarizeOwnedItems(this.run.ownedPerks, PERKS)}`,
+          `Buffs: ${summarizeOwnedItems(this.run.ownedBuffs, BUFFS)}`,
           `High score: room ${this.metaSave.highScore}`,
         ]
       : [
@@ -1312,10 +1559,12 @@ export class Game {
       weaponName: currentWeapon.name,
       canContinueRun: Boolean(this.runSave?.seed),
       statusMessage: this.betweenRooms
-        ? `Room clear. Move freely, open Hub when ready, or enter room ${this.run?.roomIndex ?? 1}.`
+        ? `${this.roomRewardSummary} Move freely, open Hub when ready, or enter room ${this.run?.roomIndex ?? 1}.`
         : this.notification,
-      rerollCost: this.run?.shopState ? getRerollCost(this.run.shopState.rerolls) : getRerollCost(0),
-      canReroll: Boolean(this.run?.shopState && this.run.gold >= getRerollCost(this.run.shopState.rerolls)),
+      rerollCost: this.run?.shopState ? getRerollCost(this.run.shopState.rerolls, this.run.roomIndex) : getRerollCost(0, 1),
+      canReroll: Boolean(
+        this.run?.shopState && this.run.gold >= getRerollCost(this.run.shopState.rerolls, this.run.roomIndex),
+      ),
       shopOffers: this.run?.shopState?.offers ?? [],
       skills: skillCards,
       stats,

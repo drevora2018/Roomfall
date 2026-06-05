@@ -239,7 +239,7 @@ export function generateRoom({ seed, roomIndex, isBoss = false }) {
     spawn,
     rng,
     isBoss,
-    bossAnchor ? [{ cell: bossAnchor, radius: 1.6 }] : [],
+    bossAnchor ? [{ cell: bossAnchor, radius: 2.25 }] : [],
   );
   const enemySpawns = isBoss
     ? [pickBossSpawn(mask, blocked, spawn, rng) ?? bossAnchor]

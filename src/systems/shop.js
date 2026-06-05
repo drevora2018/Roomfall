@@ -2,8 +2,20 @@ import { BUFFS, PERKS } from "../config/perks.js";
 import { SHOP_WEAPON_IDS, WEAPONS } from "../config/weapons.js";
 import { createRng, deriveSeed } from "./rng.js";
 
-export function getRerollCost(rerolls) {
-  return 18 + rerolls * 11;
+export function getShopCostMultiplier(roomIndex, type) {
+  const roomFactor = Math.max(0, roomIndex - 1);
+  const base = 1 + roomFactor * 0.24 + roomFactor * roomFactor * 0.022;
+  const slotBonus = type === "weapon" ? 0.26 : type === "perk" ? 0.14 : 0;
+  return base + slotBonus;
+}
+
+function scaleOfferCost(baseCost, roomIndex, type) {
+  return Math.max(1, Math.round(baseCost * getShopCostMultiplier(roomIndex, type)));
+}
+
+export function getRerollCost(rerolls, roomIndex = 1) {
+  const roomFactor = Math.max(0, roomIndex - 1);
+  return Math.round(18 + rerolls * 11 + roomFactor * 5 + roomFactor * roomFactor * 0.25);
 }
 
 function chooseUnique(rng, ids, count) {
@@ -30,12 +42,14 @@ export function createShopState({
   const buffPool = Object.keys(BUFFS);
 
   const weaponId = weaponPool.length ? rng.pick(weaponPool) : currentWeaponId;
-  const perkId = perkPool.length ? rng.pick(perkPool) : rng.pick(Object.keys(PERKS));
+  const perkId = perkPool.length ? rng.pick(perkPool) : null;
   const [buffA, buffB] = chooseUnique(rng, buffPool, 2);
 
   const offers = [
     { slot: "weapon", type: "weapon", itemId: weaponId },
-    { slot: "perk", type: "perk", itemId: perkId },
+    perkId
+      ? { slot: "perk", type: "perk", itemId: perkId }
+      : { slot: "perk", type: "soldOut", itemId: null },
     { slot: "buff-a", type: "buff", itemId: buffA },
     { slot: "buff-b", type: "buff", itemId: buffB ?? buffA },
   ].map((offer) => {
@@ -45,8 +59,9 @@ export function createShopState({
         ...offer,
         name: item.name,
         description: item.description,
-        cost: item.cost,
+        cost: scaleOfferCost(item.cost, roomIndex, offer.type),
         rarity: item.rarity,
+        detailLabel: "Weapon",
       };
     }
     if (offer.type === "perk") {
@@ -55,8 +70,20 @@ export function createShopState({
         ...offer,
         name: item.name,
         description: item.description,
-        cost: item.cost,
+        cost: scaleOfferCost(item.cost, roomIndex, offer.type),
         rarity: "perk",
+        stackRule: item.stackRule,
+        detailLabel: "Unique",
+      };
+    }
+    if (offer.type === "soldOut") {
+      return {
+        ...offer,
+        name: "Perk Slot Exhausted",
+        description: "All unique perks for this run have already been purchased.",
+        cost: 0,
+        rarity: "sold-out",
+        detailLabel: "Exhausted",
       };
     }
     const item = BUFFS[offer.itemId];
@@ -64,25 +91,30 @@ export function createShopState({
       ...offer,
       name: item.name,
       description: item.description,
-      cost: item.cost,
+      cost: scaleOfferCost(item.cost, roomIndex, offer.type),
       rarity: "buff",
+      stackRule: item.stackRule,
+      detailLabel: "Stacking",
     };
   });
 
   const affordableSupportOffer = offers.find(
-    (offer) => offer.type !== "weapon" && offer.cost <= budget,
+    (offer) => offer.type !== "weapon" && offer.type !== "soldOut" && offer.cost <= budget,
   );
   if (!affordableSupportOffer && Number.isFinite(budget)) {
     const cheapestBuffId = Object.entries(BUFFS).sort((left, right) => left[1].cost - right[1].cost)[0][0];
     const cheapestBuff = BUFFS[cheapestBuffId];
+    const scaledCost = scaleOfferCost(cheapestBuff.cost, roomIndex, "buff");
     offers[2] = {
       slot: "buff-a",
       type: "buff",
       itemId: cheapestBuffId,
       name: cheapestBuff.name,
       description: cheapestBuff.description,
-      cost: cheapestBuff.cost,
+      cost: budget > 0 ? Math.min(scaledCost, Math.max(1, Math.floor(budget))) : scaledCost,
       rarity: "buff",
+      stackRule: cheapestBuff.stackRule,
+      detailLabel: "Stacking",
     };
   }
 
@@ -95,6 +127,9 @@ export function createShopState({
 export function applyShopPurchase(runState, offer) {
   if (!offer) {
     return { ok: false, reason: "Offer missing." };
+  }
+  if (offer.type === "soldOut") {
+    return { ok: false, reason: "That slot is exhausted for this run." };
   }
   if (runState.gold < offer.cost) {
     return { ok: false, reason: "Not enough Gold." };

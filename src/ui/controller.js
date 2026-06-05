@@ -128,6 +128,7 @@ export class UIController {
     this.elements.toggleAudioButton.textContent = view.muted ? "Unmute Audio" : "Mute Audio";
     this.elements.gameOverSummary.textContent = view.gameOverSummary;
     this.elements.hubCurrency.innerHTML = `
+      <div class="summary-chip">HP: ${Math.ceil(view.hp)} / ${Math.ceil(view.maxHp)}</div>
       <div class="summary-chip">Gold: ${view.gold}</div>
       <div class="summary-chip">Shards: ${view.skillShards}</div>
       <div class="summary-chip">Next Room: ${view.roomLabel}</div>
@@ -151,23 +152,40 @@ export class UIController {
     this.elements.rerollShopButton.disabled = !canReroll;
     this.elements.shopOffers.innerHTML = offers
       .map((offer, index) => {
-        const afford = gold >= offer.cost;
+        const afford = offer.type === "soldOut" || gold >= offer.cost;
+        const buttonLabel =
+          offer.type === "soldOut"
+            ? "Exhausted"
+            : offer.purchased
+              ? "Purchased"
+              : gold >= offer.cost
+                ? "Buy"
+                : "Need More Gold";
+        const detailLabel =
+          offer.detailLabel ??
+          (offer.type === "weapon"
+            ? offer.rarity
+            : offer.type === "perk"
+              ? "Unique"
+              : offer.type === "buff"
+                ? "Stacking"
+                : "Unavailable");
         return `
           <article class="shop-card">
             <h4>${offer.name}</h4>
             <p>${offer.description}</p>
             <div class="shop-card__meta">
-              <span class="meta-chip">${offer.type}</span>
-              <span class="meta-chip meta-chip--gold">${offer.cost} Gold</span>
-              <span class="meta-chip meta-chip--mint">${offer.rarity}</span>
+              <span class="meta-chip">${offer.type === "soldOut" ? "perk slot" : offer.type}</span>
+              <span class="meta-chip meta-chip--gold">${offer.type === "soldOut" ? "Sold Out" : `${offer.cost} Gold`}</span>
+              <span class="meta-chip meta-chip--mint">${detailLabel}</span>
             </div>
             <button
               class="action-button ${afford ? "" : "action-button--secondary"}"
               data-offer-index="${index}"
               type="button"
-              ${offer.purchased || !afford ? "disabled" : ""}
+              ${offer.type === "soldOut" || offer.purchased || !afford ? "disabled" : ""}
             >
-              ${offer.purchased ? "Purchased" : afford ? "Buy" : "Need More Gold"}
+              ${buttonLabel}
             </button>
           </article>
         `;
