@@ -4,8 +4,8 @@ import { createRng, deriveSeed } from "./rng.js";
 
 export function getShopCostMultiplier(roomIndex, type) {
   const roomFactor = Math.max(0, roomIndex - 1);
-  const base = 1 + roomFactor * 0.24 + roomFactor * roomFactor * 0.022;
-  const slotBonus = type === "weapon" ? 0.26 : type === "perk" ? 0.14 : 0;
+  const base = 1 + roomFactor * 0.06 + roomFactor * roomFactor * 0.008;
+  const slotBonus = type === "weapon" ? 0.18 : type === "perk" ? 0.08 : 0;
   return base + slotBonus;
 }
 
@@ -15,7 +15,7 @@ function scaleOfferCost(baseCost, roomIndex, type) {
 
 export function getRerollCost(rerolls, roomIndex = 1) {
   const roomFactor = Math.max(0, roomIndex - 1);
-  return Math.round(18 + rerolls * 11 + roomFactor * 5 + roomFactor * roomFactor * 0.25);
+  return Math.round(18 + rerolls * 10 + roomFactor * 2.5 + roomFactor * roomFactor * 0.1);
 }
 
 function chooseUnique(rng, ids, count) {
@@ -101,8 +101,12 @@ export function createShopState({
   const affordableSupportOffer = offers.find(
     (offer) => offer.type !== "weapon" && offer.type !== "soldOut" && offer.cost <= budget,
   );
-  if (!affordableSupportOffer && Number.isFinite(budget)) {
-    const cheapestBuffId = Object.entries(BUFFS).sort((left, right) => left[1].cost - right[1].cost)[0][0];
+  if (!affordableSupportOffer && Number.isFinite(budget) && budget > 0 && roomIndex <= 6) {
+    const sortedBuffIds = Object.entries(BUFFS)
+      .sort((left, right) => left[1].cost - right[1].cost)
+      .map(([id]) => id);
+    const otherBuffId = offers[3]?.itemId ?? null;
+    const cheapestBuffId = sortedBuffIds.find((id) => id !== otherBuffId) ?? sortedBuffIds[0];
     const cheapestBuff = BUFFS[cheapestBuffId];
     const scaledCost = scaleOfferCost(cheapestBuff.cost, roomIndex, "buff");
     offers[2] = {
@@ -114,7 +118,7 @@ export function createShopState({
       cost: budget > 0 ? Math.min(scaledCost, Math.max(1, Math.floor(budget))) : scaledCost,
       rarity: "buff",
       stackRule: cheapestBuff.stackRule,
-      detailLabel: "Stacking",
+      detailLabel: "Starter Relief",
     };
   }
 

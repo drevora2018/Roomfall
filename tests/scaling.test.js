@@ -10,14 +10,14 @@ test("player scaling matches documented formulas", () => {
     fireRate: 1,
   });
   assert.deepEqual(getPlayerRoomScalars(5), {
-    damage: 1.2,
-    hp: 1.16,
-    fireRate: 1.1,
+    damage: 1.12,
+    hp: 1.1,
+    fireRate: 1.048,
   });
   assert.deepEqual(getPlayerRoomScalars(10), {
-    damage: 1.45,
-    hp: 1.3599999999999999,
-    fireRate: 1.225,
+    damage: 1.27,
+    hp: 1.225,
+    fireRate: 1.108,
   });
 });
 
@@ -37,5 +37,5 @@ test("enemy scaling outpaces player with milestone bumps", () => {
     damage: 1.972,
     speed: 1.19,
   });
-  assert.equal(getCompanionScalar(20), 1.608);
+  assert.equal(getCompanionScalar(20), 1.38);
 });

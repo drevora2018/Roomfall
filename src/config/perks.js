@@ -37,9 +37,9 @@ export const BUFFS = {
   hollowPoints: {
     id: "hollowPoints",
     name: "Hollow Points",
-    description: "Increase weapon damage by 12% for this run.",
+    description: "Increase weapon damage by 9% for this run.",
     cost: 24,
-    effect: { damageMultiplier: 0.12 },
+    effect: { damageMultiplier: 0.09 },
     stackRule: "stack",
   },
   reinforcedVest: {
@@ -53,9 +53,9 @@ export const BUFFS = {
   rapidGrease: {
     id: "rapidGrease",
     name: "Rapid Grease",
-    description: "Increase fire rate by 10% for this run.",
+    description: "Increase fire rate by 7% for this run.",
     cost: 26,
-    effect: { fireRateMultiplier: 0.1 },
+    effect: { fireRateMultiplier: 0.07 },
     stackRule: "stack",
   },
   prospecting: {
@@ -69,9 +69,9 @@ export const BUFFS = {
   fleetStep: {
     id: "fleetStep",
     name: "Fleet Step",
-    description: "Gain 0.22 flat movement speed for this run.",
+    description: "Gain 0.14 flat movement speed for this run.",
     cost: 24,
-    effect: { flatSpeed: 0.22 },
+    effect: { flatSpeed: 0.14 },
     stackRule: "stack",
   },
 };

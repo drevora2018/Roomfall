@@ -36,10 +36,10 @@ export function getEnemyScalars(roomIndex) {
 
 export function describeScalingMath() {
   return [
-    "Player damage scalar: 1 + 0.05r",
-    "Player max HP scalar: 1 + 0.04r",
-    "Player fire rate scalar: 1 + 0.025r",
-    "Companion power scalar: 1 + 0.032r",
+    "Player damage scalar: 1 + 0.03r",
+    "Player max HP scalar: 1 + 0.025r",
+    "Player fire rate scalar: 1 + 0.012r",
+    "Companion power scalar: 1 + 0.02r",
     "Enemy HP scalar: 1 + 0.06r + 0.025 * floor(r / 5)",
     "Enemy damage scalar: 1 + 0.048r + 0.02 * floor(r / 5)",
     "Enemy move speed scalar: 1 + 0.01r",
