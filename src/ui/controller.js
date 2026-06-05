@@ -133,12 +133,8 @@ export class UIController {
       <div class="summary-chip">Next Room: ${view.roomLabel}</div>
     `;
 
-    if (this.lastOverlay !== view.overlay) {
-      this.setOverlay(view.overlay);
-    }
-    if (this.lastTab !== view.activeTab) {
-      this.setActiveTab(view.activeTab);
-    }
+    this.setOverlay(view.overlay);
+    this.setActiveTab(view.activeTab);
 
     this.renderShop(view.shopOffers, view.gold, view.rerollCost, view.canReroll);
     this.renderSkills(view.skills, view.skillShards);

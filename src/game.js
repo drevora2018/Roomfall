@@ -236,6 +236,7 @@ export class Game {
     clearRunSave(this.storage);
     this.runSave = loadRunSave(this.storage);
     this.overlay = null;
+    this.ui.setOverlay(null);
   }
 
   continueRun() {
@@ -277,10 +278,12 @@ export class Game {
     this.notification = `Continued at room ${this.run.roomIndex}.`;
     this.notificationUntil = performance.now() / 1000 + 2;
     this.overlay = null;
+    this.ui.setOverlay(null);
   }
 
   returnToMenu() {
     this.overlay = "menu";
+    this.ui.setOverlay("menu");
   }
 
   openHub(tab = "shop") {
@@ -289,11 +292,13 @@ export class Game {
     }
     this.hubTab = tab;
     this.overlay = "hub";
+    this.ui.setOverlay("hub");
   }
 
   closeHub() {
     if (this.overlay === "hub") {
       this.overlay = null;
+      this.ui.setOverlay(null);
     }
   }
 
@@ -303,6 +308,7 @@ export class Game {
     }
     this.pauseOrigin = this.overlay === "hub" ? "hub" : "playing";
     this.overlay = "pause";
+    this.ui.setOverlay("pause");
   }
 
   resume() {
@@ -310,6 +316,7 @@ export class Game {
       return;
     }
     this.overlay = this.pauseOrigin === "hub" ? "hub" : null;
+    this.ui.setOverlay(this.overlay);
   }
 
   continueToNextRoom() {
@@ -319,6 +326,7 @@ export class Game {
     this.betweenRooms = false;
     this.enterRoom(this.run.roomIndex, false, { hp: this.player.hp, maxHp: this.player.maxHp }, this.run.shopState);
     this.overlay = null;
+    this.ui.setOverlay(null);
   }
 
   resetMetaProgress() {
@@ -1008,6 +1016,7 @@ export class Game {
     clearRunSave(this.storage);
     this.gameOverSummary = `Reached room ${this.run.roomIndex} with ${this.run.gold} Gold banked in the run. High score: room ${this.metaSave.highScore}.`;
     this.overlay = "gameOver";
+    this.ui.setOverlay("gameOver");
     this.run = null;
     this.room = null;
     this.enemies = [];
