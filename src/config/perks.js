@@ -1,0 +1,77 @@
+export const PERKS = {
+  pressureChamber: {
+    id: "pressureChamber",
+    name: "Pressure Chamber",
+    description: "Deal 18% more damage while above 70% HP.",
+    cost: 68,
+    stackRule: "unique",
+    tags: ["damage", "conditional"],
+  },
+  killSwitch: {
+    id: "killSwitch",
+    name: "Kill Switch",
+    description: "Heal 12 HP whenever you clear a room.",
+    cost: 60,
+    stackRule: "unique",
+    tags: ["recovery"],
+  },
+  glassDynamo: {
+    id: "glassDynamo",
+    name: "Glass Dynamo",
+    description: "Gain 14% fire rate but lose 10 max HP.",
+    cost: 74,
+    stackRule: "unique",
+    tags: ["fireRate", "risk"],
+  },
+  bossBounty: {
+    id: "bossBounty",
+    name: "Boss Bounty",
+    description: "Deal 25% more damage to elites and bosses. Bosses drop 25% more Gold.",
+    cost: 80,
+    stackRule: "unique",
+    tags: ["boss", "economy"],
+  },
+};
+
+export const BUFFS = {
+  hollowPoints: {
+    id: "hollowPoints",
+    name: "Hollow Points",
+    description: "Increase weapon damage by 12% for this run.",
+    cost: 38,
+    effect: { damageMultiplier: 0.12 },
+    stackRule: "stack",
+  },
+  reinforcedVest: {
+    id: "reinforcedVest",
+    name: "Reinforced Vest",
+    description: "Gain 18 max HP for this run.",
+    cost: 42,
+    effect: { flatHp: 18 },
+    stackRule: "stack",
+  },
+  rapidGrease: {
+    id: "rapidGrease",
+    name: "Rapid Grease",
+    description: "Increase fire rate by 10% for this run.",
+    cost: 40,
+    effect: { fireRateMultiplier: 0.1 },
+    stackRule: "stack",
+  },
+  prospecting: {
+    id: "prospecting",
+    name: "Prospecting",
+    description: "Increase Gold gain by 15% for this run.",
+    cost: 34,
+    effect: { goldMultiplier: 0.15 },
+    stackRule: "stack",
+  },
+  fleetStep: {
+    id: "fleetStep",
+    name: "Fleet Step",
+    description: "Gain 0.22 flat movement speed for this run.",
+    cost: 32,
+    effect: { flatSpeed: 0.22 },
+    stackRule: "stack",
+  },
+};

@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Roomfall</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <canvas id="game-canvas" aria-label="Roomfall game area"></canvas>
+
+      <header class="hud">
+        <div class="hud__group">
+          <div class="hud-pill">
+            <span class="hud-pill__label">Room</span>
+            <span id="hud-room">1</span>
+          </div>
+          <div class="hud-pill">
+            <span class="hud-pill__label">HP</span>
+            <span id="hud-hp">100 / 100</span>
+          </div>
+          <div class="hud-pill">
+            <span class="hud-pill__label">Gold</span>
+            <span id="hud-gold">0</span>
+          </div>
+          <div class="hud-pill">
+            <span class="hud-pill__label">Shards</span>
+            <span id="hud-shards">0</span>
+          </div>
+        </div>
+        <div class="hud__group">
+          <div class="hud-pill">
+            <span class="hud-pill__label">Weapon</span>
+            <span id="hud-weapon">Pistol</span>
+          </div>
+          <button id="open-hub-button" class="hud-button" type="button">Hub</button>
+          <button id="open-pause-button" class="hud-button" type="button">Pause</button>
+        </div>
+      </header>
+
+      <aside class="help-strip">
+        <span>WASD move</span>
+        <span>Mouse aim</span>
+        <span>Hold left click fire</span>
+        <span>Tab hub</span>
+        <span>Esc pause</span>
+      </aside>
+
+      <section id="menu-overlay" class="overlay overlay--visible">
+        <div class="panel panel--hero">
+          <p class="eyebrow">Single Page Roguelike Shooter</p>
+          <h1>Roomfall</h1>
+          <p class="panel-copy">
+            Fight through procedural arenas, scale faster every room, and build a run
+            through weapons, buffs, perks, and a persistent skill tree.
+          </p>
+          <div class="stack gap-md">
+            <button id="new-run-button" class="action-button" type="button">Start New Run</button>
+            <button id="continue-run-button" class="action-button action-button--secondary" type="button">
+              Continue Run
+            </button>
+          </div>
+          <div class="menu-grid">
+            <div>
+              <h2>Run Loop</h2>
+              <p>Clear a room, earn Gold and Skill Shards, then decide how to scale into the next fight.</p>
+            </div>
+            <div>
+              <h2>Meta Progress</h2>
+              <p>Spend Skill Shards on weapon, mobility, and summon branches that carry between runs.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="hub-overlay" class="overlay">
+        <div class="panel panel--wide">
+          <div class="panel__header">
+            <div>
+              <p class="eyebrow">Always Accessible Hub</p>
+              <h2>Command Deck</h2>
+            </div>
+            <div class="stack stack--row">
+              <button id="close-hub-button" class="hud-button" type="button">Close</button>
+              <button id="continue-room-button" class="action-button" type="button">Enter Next Room</button>
+            </div>
+          </div>
+
+          <div class="tab-row">
+            <button class="tab-button tab-button--active" data-tab="shop" type="button">Shop</button>
+            <button class="tab-button" data-tab="skills" type="button">Skills</button>
+            <button class="tab-button" data-tab="stats" type="button">Stats</button>
+          </div>
+
+          <div id="hub-status" class="status-banner"></div>
+
+          <div class="tab-panels">
+            <section id="hub-tab-shop" class="tab-panel tab-panel--active">
+              <div class="section-header">
+                <div>
+                  <h3>Rotating Shop</h3>
+                  <p>One weapon, one perk, two buffs every roll.</p>
+                </div>
+                <button id="reroll-shop-button" class="hud-button" type="button">Reroll</button>
+              </div>
+              <div id="shop-offers" class="card-grid"></div>
+            </section>
+
+            <section id="hub-tab-skills" class="tab-panel">
+              <div class="section-header">
+                <div>
+                  <h3>Skill Tree</h3>
+                  <p>Persistent upgrades purchased with Skill Shards.</p>
+                </div>
+                <div id="skills-summary" class="summary-chip"></div>
+              </div>
+              <div id="skills-tree" class="skill-columns"></div>
+            </section>
+
+            <section id="hub-tab-stats" class="tab-panel">
+              <div class="section-header">
+                <div>
+                  <h3>Run Stats</h3>
+                  <p>Current power, scaling, and balance formulas.</p>
+                </div>
+              </div>
+              <div class="stats-layout">
+                <div id="stats-list" class="stats-card"></div>
+                <div id="math-list" class="stats-card"></div>
+              </div>
+            </section>
+          </div>
+        </div>
+      </section>
+
+      <section id="pause-overlay" class="overlay">
+        <div class="panel">
+          <p class="eyebrow">Paused</p>
+          <h2>Run Controls</h2>
+          <div class="stack gap-sm">
+            <button id="resume-button" class="action-button" type="button">Resume</button>
+            <button id="pause-new-run-button" class="action-button action-button--secondary" type="button">
+              New Run
+            </button>
+            <button id="toggle-audio-button" class="action-button action-button--secondary" type="button">
+              Toggle Audio
+            </button>
+            <button id="reset-progress-button" class="action-button action-button--danger" type="button">
+              Reset Meta Progress
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section id="game-over-overlay" class="overlay">
+        <div class="panel">
+          <p class="eyebrow">Run Ended</p>
+          <h2>Game Over</h2>
+          <p id="game-over-summary" class="panel-copy"></p>
+          <div class="stack gap-sm">
+            <button id="retry-button" class="action-button" type="button">Start New Run</button>
+            <button id="return-menu-button" class="action-button action-button--secondary" type="button">
+              Return To Menu
+            </button>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>
